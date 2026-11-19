@@ -1,17 +1,26 @@
 import 'package:flutter/material.dart';
-import 'package:utsproject/app/config/app_colors.dart';
+import '../../../../app/config/app_colors.dart';
 
 class BudgetProgressBar extends StatelessWidget {
   final double percentage;
-  const BudgetProgressBar({super.key, required this.percentage});
+  final Color? color;
+
+  const BudgetProgressBar({
+    super.key,
+    required this.percentage,
+    this.color,
+  });
 
   @override
   Widget build(BuildContext context) {
-    return LinearProgressIndicator(
-      value: percentage,
-      backgroundColor: AppColors.cardSecondary,
-      color: AppColors.primaryYellow,
-      minHeight: 10,
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(10),
+      child: LinearProgressIndicator(
+        value: percentage.clamp(0.0, 1.0),
+        backgroundColor: AppColors.cardSecondary,
+        color: color ?? AppColors.primaryBlue,
+        minHeight: 12,
+      ),
     );
   }
 }

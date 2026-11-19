@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:utsproject/app/config/app_colors.dart';
+import '../../../../app/config/app_colors.dart';
 
 class AuthTextField extends StatelessWidget {
   final TextEditingController controller;
@@ -24,7 +24,7 @@ class AuthTextField extends StatelessWidget {
       decoration: InputDecoration(
         labelText: label,
         labelStyle: const TextStyle(color: AppColors.textSecondary),
-        prefixIcon: Icon(icon, color: AppColors.primaryYellow),
+        prefixIcon: Icon(icon, color: AppColors.primaryBlue),
         filled: true,
         fillColor: AppColors.cardBackground,
         border: OutlineInputBorder(

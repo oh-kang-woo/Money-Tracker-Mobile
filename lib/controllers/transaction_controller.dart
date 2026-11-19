@@ -1,29 +1,36 @@
-import 'package:flutter/material.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
+import '../app/constants/firebase_collections.dart';
 import '../models/transaction_model.dart';
 
-class TransactionController extends ChangeNotifier {
-  // Data private, hanya bisa dimodifikasi dari dalam controller
-  final List<TransactionModel> _transactions = [];
+class TransactionController {
+  final CollectionReference _trxRef = FirebaseFirestore.instance
+      .collection(FirebaseCollections.transactions);
 
-  // Getter untuk mengambil data dari luar
-  List<TransactionModel> get transactions => _transactions;
-
-  // Logika menghitung total saldo
-  double get totalBalance {
-    return _transactions.fold(0, (sum, item) => sum + item.amount);
+  // CREATE
+  Future<void> addTransaction(TransactionModel trx) async {
+    await _trxRef.add(trx.toMap());
   }
 
-  // Logika menambahkan transaksi baru
-  void addTransaction(String title, double amount) {
-    final newTransaction = TransactionModel(
-      id: DateTime.now().toString(),
-      title: title,
-      amount: amount,
-      date: DateTime.now(),
-    );
-    _transactions.add(newTransaction);
-    
-    // Memberi tahu View bahwa ada perubahan data agar UI diperbarui
-    notifyListeners(); 
+  // READ (Real-time Stream)
+  Stream<List<TransactionModel>> getTransactionsStream() {
+    return _trxRef
+        .orderBy('date', descending: true)
+        .snapshots()
+        .map((snapshot) {
+      return snapshot.docs
+          .map((doc) => TransactionModel.fromFirestore(doc))
+          .toList();
+    });
+  }
+
+  // UPDATE
+  Future<void> updateTransaction(TransactionModel trx) async {
+    if (trx.id == null) return;
+    await _trxRef.doc(trx.id).update(trx.toMap());
+  }
+
+  // DELETE
+  Future<void> deleteTransaction(String id) async {
+    await _trxRef.doc(id).delete();
   }
 }

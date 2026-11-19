@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
-import 'package:utsproject/app/config/app_colors.dart';
-import 'package:utsproject/features/auth/presentation/widgets/auth_text_field.dart';
+import '../../../../app/config/app_colors.dart';
+import '../widgets/auth_text_field.dart';
 
 class RegisterScreen extends StatelessWidget {
   final TextEditingController nameController = TextEditingController();
@@ -21,23 +21,48 @@ class RegisterScreen extends StatelessWidget {
           children: [
             const Text(
               'Create Account',
-              style: TextStyle(fontSize: 28, fontWeight: FontWeight.bold, color: AppColors.textPrimary),
+              style: TextStyle(
+                fontSize: 28,
+                fontWeight: FontWeight.bold,
+                color: AppColors.textPrimary,
+              ),
             ),
             const SizedBox(height: 24),
-            AuthTextField(controller: nameController, label: 'Full Name', icon: Icons.person),
+            AuthTextField(
+              controller: nameController,
+              label: 'Full Name',
+              icon: Icons.person,
+            ),
             const SizedBox(height: 16),
-            AuthTextField(controller: emailController, label: 'Email', icon: Icons.email),
+            AuthTextField(
+              controller: emailController,
+              label: 'Email',
+              icon: Icons.email,
+            ),
             const SizedBox(height: 16),
-            AuthTextField(controller: passwordController, label: 'Password', icon: Icons.lock, isPassword: true),
+            AuthTextField(
+              controller: passwordController,
+              label: 'Password',
+              icon: Icons.lock,
+              isPassword: true,
+            ),
             const SizedBox(height: 24),
             ElevatedButton(
               style: ElevatedButton.styleFrom(
-                backgroundColor: AppColors.primaryYellow,
+                backgroundColor: AppColors.primaryBlue,
                 padding: const EdgeInsets.symmetric(vertical: 16),
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(16),
+                ),
               ),
               onPressed: () {},
-              child: const Text('Register', style: TextStyle(color: AppColors.textOnYellow, fontWeight: FontWeight.bold)),
+              child: const Text(
+                'Register',
+                style: TextStyle(
+                  color: AppColors.textPrimary,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
             ),
           ],
         ),

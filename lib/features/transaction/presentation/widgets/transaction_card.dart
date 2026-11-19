@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:utsproject/app/config/app_colors.dart';
+import '../../../../app/config/app_colors.dart';
 
 class TransactionCard extends StatelessWidget {
   final String title;
@@ -7,6 +7,9 @@ class TransactionCard extends StatelessWidget {
   final String amount;
   final bool isPositive;
   final IconData icon;
+  final Color? customColor;
+  final VoidCallback? onTap;
+  final VoidCallback? onDelete;
 
   const TransactionCard({
     super.key,
@@ -15,47 +18,82 @@ class TransactionCard extends StatelessWidget {
     required this.amount,
     required this.isPositive,
     required this.icon,
+    this.customColor,
+    this.onTap,
+    this.onDelete,
   });
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      margin: const EdgeInsets.only(bottom: 12),
-      padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
-        color: AppColors.cardBackground,
-        borderRadius: BorderRadius.circular(18),
-      ),
-      child: Row(
-        children: [
-          Container(
-            padding: const EdgeInsets.all(12),
-            decoration: BoxDecoration(
-              color: AppColors.primaryYellow.withValues(alpha: 0.15),
-              borderRadius: BorderRadius.circular(14),
+    final accent =
+        customColor ?? (isPositive ? AppColors.incomeGreen : AppColors.expenseRed);
+
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(18),
+      child: Container(
+        margin: const EdgeInsets.only(bottom: 12),
+        padding: const EdgeInsets.all(14),
+        decoration: BoxDecoration(
+          color: AppColors.cardBackground,
+          borderRadius: BorderRadius.circular(18),
+          border: Border.all(color: AppColors.cardBorder),
+        ),
+        child: Row(
+          children: [
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: accent.withValues(alpha: 0.15),
+                borderRadius: BorderRadius.circular(14),
+              ),
+              child: Icon(icon, color: accent, size: 22),
             ),
-            child: Icon(icon, color: AppColors.primaryYellow, size: 22),
-          ),
-          const SizedBox(width: 14),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(title, style: const TextStyle(color: AppColors.textPrimary, fontSize: 15, fontWeight: FontWeight.w600)),
-                const SizedBox(height: 4),
-                Text(date, style: const TextStyle(color: AppColors.textSecondary, fontSize: 12)),
-              ],
+            const SizedBox(width: 14),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    title,
+                    style: const TextStyle(
+                      color: AppColors.textPrimary,
+                      fontSize: 15,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    date,
+                    style: const TextStyle(
+                      color: AppColors.textSecondary,
+                      fontSize: 12,
+                    ),
+                  ),
+                ],
+              ),
             ),
-          ),
-          Text(
-            amount,
-            style: TextStyle(
-              color: isPositive ? AppColors.textPrimary : AppColors.expenseText,
-              fontSize: 15,
-              fontWeight: FontWeight.bold,
+            Text(
+              amount,
+              style: TextStyle(
+                color: accent,
+                fontSize: 15,
+                fontWeight: FontWeight.bold,
+              ),
             ),
-          ),
-        ],
+            if (onDelete != null) ...[
+              const SizedBox(width: 4),
+              IconButton(
+                icon: const Icon(
+                  Icons.delete_outline,
+                  color: AppColors.textMuted,
+                  size: 20,
+                ),
+                onPressed: onDelete,
+              ),
+            ],
+          ],
+        ),
       ),
     );
   }
