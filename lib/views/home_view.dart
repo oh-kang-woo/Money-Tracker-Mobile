@@ -167,14 +167,21 @@ class _HomeViewState extends State<HomeView> {
   }) {
     final titleController =
         TextEditingController(text: existingTrx?.title ?? '');
+    
+    // Perbaikan M-03: Menjaga angka desimal jika ada
     final amountController = TextEditingController(
-      text: existingTrx != null ? existingTrx.amount.toInt().toString() : '',
+      text: existingTrx != null 
+          ? (existingTrx.amount % 1 == 0 
+              ? existingTrx.amount.toInt().toString() 
+              : existingTrx.amount.toString()) 
+          : '',
     );
     String selectedType = existingTrx?.type ?? 'expense';
     String selectedCategory = existingTrx?.category ?? 'Makanan';
     String selectedWallet = existingTrx?.wallet ?? 'Tunai';
     DateTime selectedDate = existingTrx?.date ?? DateTime.now();
     bool showCalculator = false;
+    bool isSubmitting = false; // M-06
     List<CategoryModel> localCustomCats = List.from(customCategories);
 
     showModalBottomSheet(
@@ -391,7 +398,7 @@ class _HomeViewState extends State<HomeView> {
                         Expanded(
                           child: TextField(
                             controller: amountController,
-                            keyboardType: TextInputType.number,
+                            keyboardType: const TextInputType.numberWithOptions(decimal: true),
                             style:
                                 const TextStyle(color: AppColors.textPrimary),
                             decoration: InputDecoration(
@@ -487,7 +494,7 @@ class _HomeViewState extends State<HomeView> {
                           borderRadius: BorderRadius.circular(12),
                         ),
                       ),
-                      onPressed: () async {
+                      onPressed: isSubmitting ? null : () async {
                         final title = titleController.text.trim();
                         final amount =
                             double.tryParse(amountController.text) ?? 0;
@@ -505,20 +512,37 @@ class _HomeViewState extends State<HomeView> {
                           date: selectedDate,
                         );
 
-                        if (existingTrx == null) {
-                          await _controller.addTransaction(trx);
-                        } else {
-                          await _controller.updateTransaction(trx);
-                        }
+                        setModalState(() => isSubmitting = true); // M-06
 
-                        if (ctx.mounted) Navigator.pop(ctx);
+                        try {
+                          if (existingTrx == null) {
+                            await _controller.addTransaction(trx);
+                          } else {
+                            await _controller.updateTransaction(trx);
+                          }
+                          if (ctx.mounted) Navigator.pop(ctx);
+                        } catch (e) {
+                          if (ctx.mounted) {
+                            ScaffoldMessenger.of(ctx).showSnackBar(
+                              SnackBar(content: Text('Gagal menyimpan transaksi: $e')),
+                            );
+                          }
+                        } finally {
+                          if (ctx.mounted) setModalState(() => isSubmitting = false);
+                        }
                       },
-                      child: Text(
-                        existingTrx == null
-                            ? 'Simpan Transaksi'
-                            : 'Update Transaksi',
-                        style: const TextStyle(fontWeight: FontWeight.bold),
-                      ),
+                      child: isSubmitting
+                          ? const SizedBox(
+                              height: 20,
+                              width: 20,
+                              child: CircularProgressIndicator(strokeWidth: 2.5),
+                            )
+                          : Text(
+                              existingTrx == null
+                                  ? 'Simpan Transaksi'
+                                  : 'Update Transaksi',
+                              style: const TextStyle(fontWeight: FontWeight.bold),
+                            ),
                     ),
                   ],
                 ),
@@ -533,15 +557,23 @@ class _HomeViewState extends State<HomeView> {
   void _showTransferModal(
     BuildContext context, {
     TransactionModel? existingTrx,
+    required List<TransactionModel> allTransactions,
   }) {
     String fromWallet = existingTrx?.wallet ?? 'Bank';
     String toWallet = existingTrx?.toWallet ?? 'Tunai';
     final noteController =
         TextEditingController(text: existingTrx?.title ?? '');
+    
+    // Perbaikan M-03: Menjaga angka desimal jika ada
     final amountController = TextEditingController(
-      text: existingTrx != null ? existingTrx.amount.toInt().toString() : '',
+      text: existingTrx != null 
+          ? (existingTrx.amount % 1 == 0 
+              ? existingTrx.amount.toInt().toString() 
+              : existingTrx.amount.toString()) 
+          : '',
     );
     DateTime selectedDate = existingTrx?.date ?? DateTime.now();
+    bool isSubmitting = false; // M-06
 
     showModalBottomSheet(
       context: context,
@@ -644,7 +676,7 @@ class _HomeViewState extends State<HomeView> {
                     const SizedBox(height: 12),
                     TextField(
                       controller: amountController,
-                      keyboardType: TextInputType.number,
+                      keyboardType: const TextInputType.numberWithOptions(decimal: true),
                       style: const TextStyle(color: AppColors.textPrimary),
                       decoration: InputDecoration(
                         labelText: 'Nominal Transfer (Rp)',
@@ -686,13 +718,36 @@ class _HomeViewState extends State<HomeView> {
                           borderRadius: BorderRadius.circular(12),
                         ),
                       ),
-                      onPressed: () async {
-                        final amount =
-                            double.tryParse(amountController.text) ?? 0;
+                      onPressed: isSubmitting ? null : () async {
+                        final amount = double.tryParse(amountController.text) ?? 0;
                         final uid = FirebaseAuth.instance.currentUser?.uid;
-                        if (amount <= 0 ||
-                            uid == null ||
-                            fromWallet == toWallet) {
+                        if (amount <= 0 || uid == null || fromWallet == toWallet) {
+                          return;
+                        }
+
+                        // Perbaikan M-02: Validasi ketersediaan saldo sebelum transfer
+                        double currentBalance = 0;
+                        for (final t in allTransactions) {
+                          if (t.wallet == fromWallet) {
+                            if (t.type == 'income') currentBalance += t.amount;
+                            if (t.type == 'expense' || t.type == 'transfer') currentBalance -= t.amount;
+                          }
+                          if (t.type == 'transfer' && t.toWallet == fromWallet) {
+                            currentBalance += t.amount;
+                          }
+                        }
+
+                        // Jangan memblokir mutlak jika ini hanya edit transaksi (karena saldo sudah terpengaruh sebelumnya)
+                        // Namun untuk transaksi baru, validasi saldo sangat penting
+                        if (existingTrx == null && amount > currentBalance) {
+                          ScaffoldMessenger.of(ctx).showSnackBar(
+                            SnackBar(
+                              backgroundColor: AppColors.expenseRed,
+                              content: Text(
+                                'Saldo dompet $fromWallet tidak mencukupi (Sisa: ${PrivacyService.formatCurrency(currentBalance, _currencyFormat, false)})',
+                              ),
+                            ),
+                          );
                           return;
                         }
 
@@ -712,18 +767,35 @@ class _HomeViewState extends State<HomeView> {
                           date: selectedDate,
                         );
 
-                        if (existingTrx == null) {
-                          await _controller.addTransaction(trx);
-                        } else {
-                          await _controller.updateTransaction(trx);
-                        }
+                        setModalState(() => isSubmitting = true); // M-06
 
-                        if (ctx.mounted) Navigator.pop(ctx);
+                        try {
+                          if (existingTrx == null) {
+                            await _controller.addTransaction(trx);
+                          } else {
+                            await _controller.updateTransaction(trx);
+                          }
+                          if (ctx.mounted) Navigator.pop(ctx);
+                        } catch (e) {
+                          if (ctx.mounted) {
+                            ScaffoldMessenger.of(ctx).showSnackBar(
+                              SnackBar(content: Text('Gagal memproses transfer: $e')),
+                            );
+                          }
+                        } finally {
+                          if (ctx.mounted) setModalState(() => isSubmitting = false);
+                        }
                       },
-                      child: const Text(
-                        'Proses Transfer',
-                        style: TextStyle(fontWeight: FontWeight.bold),
-                      ),
+                      child: isSubmitting
+                          ? const SizedBox(
+                              height: 20,
+                              width: 20,
+                              child: CircularProgressIndicator(strokeWidth: 2.5, color: AppColors.background),
+                            )
+                          : const Text(
+                              'Proses Transfer',
+                              style: TextStyle(fontWeight: FontWeight.bold),
+                            ),
                     ),
                   ],
                 ),
@@ -1015,255 +1087,264 @@ class _HomeViewState extends State<HomeView> {
           builder: (context, catSnap) {
             final customCategories = catSnap.data ?? [];
 
-            return Scaffold(
-              appBar: AppBar(
-                title: const Text('Money Tracker'),
-                actions: [
-                  IconButton(
-                    tooltip: isHidden ? 'Tampilkan Saldo' : 'Sembunyikan Saldo',
-                    icon: Icon(
-                      isHidden
-                          ? Icons.visibility_off_outlined
-                          : Icons.visibility_outlined,
-                      color: AppColors.textSecondary,
-                    ),
-                    onPressed: () => PrivacyService.togglePrivacy(),
-                  ),
-                  IconButton(
-                    tooltip: 'Transfer Antar Dompet',
-                    icon:
-                        const Icon(Icons.swap_horiz, color: AppColors.neonCyan),
-                    onPressed: () => _showTransferModal(context),
-                  ),
-                ],
-              ),
-              body: StreamBuilder<List<TransactionModel>>(
-                stream: _controller.getTransactionsStream(),
-                builder: (context, snapshot) {
-                  if (snapshot.connectionState == ConnectionState.waiting) {
-                    return const Center(child: CircularProgressIndicator());
-                  }
-                  if (snapshot.hasError) {
-                    return Center(
+            return StreamBuilder<List<TransactionModel>>(
+              stream: _controller.getTransactionsStream(),
+              builder: (context, snapshot) {
+                if (snapshot.connectionState == ConnectionState.waiting) {
+                  return const Scaffold(body: Center(child: CircularProgressIndicator()));
+                }
+                if (snapshot.hasError) {
+                  return Scaffold(
+                    body: Center(
                       child: Text(
-                        'Error: ${snapshot.error}',
+                        'Error memuat data: ${snapshot.error}',
                         style: const TextStyle(color: AppColors.expenseRed),
                       ),
-                    );
-                  }
+                    ),
+                  );
+                }
 
-                  final allTransactions = snapshot.data ?? [];
-                  final prevMonth =
-                      DateTime(_selectedMonth.year, _selectedMonth.month - 1);
+                final allTransactions = snapshot.data ?? [];
 
-                  final monthlyTransactions = allTransactions.where((t) {
-                    return t.date.month == _selectedMonth.month &&
-                        t.date.year == _selectedMonth.year;
-                  }).toList();
-
-                  final double prevMonthExpense = allTransactions
-                      .where((t) =>
-                          t.type == 'expense' &&
-                          t.date.month == prevMonth.month &&
-                          t.date.year == prevMonth.year)
-                      .fold<double>(0, (acc, t) => acc + t.amount);
-
-                  double totalIncome = 0;
-                  double totalExpense = 0;
-                  final Map<String, double> catMap = {};
-
-                  for (final t in monthlyTransactions) {
-                    if (t.type == 'income') {
-                      totalIncome += t.amount;
-                    } else if (t.type == 'expense') {
-                      totalExpense += t.amount;
-                      catMap[t.category] =
-                          (catMap[t.category] ?? 0) + t.amount;
-                    }
-                  }
-
-                  String topCategoryLabel = 'Terbesar: -';
-                  if (catMap.isNotEmpty && totalExpense > 0) {
-                    final topEntry = catMap.entries
-                        .reduce((a, b) => a.value > b.value ? a : b);
-                    final pct = (topEntry.value / totalExpense) * 100;
-                    topCategoryLabel =
-                        'Terbesar: ${topEntry.key} (${pct.toStringAsFixed(0)}%)';
-                  }
-
-                  final filteredTransactions = monthlyTransactions.where((t) {
-                    final matchesFilter =
-                        _selectedFilter == 'all' || t.type == _selectedFilter;
-                    final matchesWallet = _selectedWalletFilter == 'Semua' ||
-                        t.wallet == _selectedWalletFilter ||
-                        (t.type == 'transfer' &&
-                            t.toWallet == _selectedWalletFilter);
-                    final matchesSearch = t.title
-                            .toLowerCase()
-                            .contains(_searchQuery.toLowerCase()) ||
-                        t.category
-                            .toLowerCase()
-                            .contains(_searchQuery.toLowerCase());
-                    return matchesFilter && matchesWallet && matchesSearch;
-                  }).toList();
-
-                  return Column(
-                    children: [
-                      MonthSelector(
-                        selectedMonth: _selectedMonth,
-                        onMonthChanged: (newMonth) {
-                          setState(() => _selectedMonth = newMonth);
-                        },
-                      ),
-                      _buildSummaryCard(
-                        totalIncome,
-                        totalExpense,
-                        prevMonthExpense,
-                        topCategoryLabel,
-                        isHidden,
-                      ),
-                      _buildWalletRow(allTransactions, isHidden),
-                      const SizedBox(height: 10),
-                      Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: 16),
-                        child: TextField(
-                          onChanged: (val) =>
-                              setState(() => _searchQuery = val),
-                          style: const TextStyle(color: AppColors.textPrimary),
-                          decoration: InputDecoration(
-                            hintText: 'Cari transaksi atau kategori...',
-                            hintStyle:
-                                const TextStyle(color: AppColors.textMuted),
-                            prefixIcon: const Icon(Icons.search,
-                                color: AppColors.textMuted),
-                            filled: true,
-                            fillColor: AppColors.cardBackground,
-                            contentPadding:
-                                const EdgeInsets.symmetric(vertical: 0),
-                            border: OutlineInputBorder(
-                              borderRadius: BorderRadius.circular(14),
-                              borderSide:
-                                  const BorderSide(color: AppColors.cardBorder),
-                            ),
-                            enabledBorder: OutlineInputBorder(
-                              borderRadius: BorderRadius.circular(14),
-                              borderSide:
-                                  const BorderSide(color: AppColors.cardBorder),
-                            ),
-                          ),
+                return Scaffold(
+                  appBar: AppBar(
+                    title: const Text('Money Tracker'),
+                    actions: [
+                      IconButton(
+                        tooltip: isHidden ? 'Tampilkan Saldo' : 'Sembunyikan Saldo',
+                        icon: Icon(
+                          isHidden
+                              ? Icons.visibility_off_outlined
+                              : Icons.visibility_outlined,
+                          color: AppColors.textSecondary,
                         ),
+                        onPressed: () => PrivacyService.togglePrivacy(),
                       ),
-                      const SizedBox(height: 8),
-                      SingleChildScrollView(
-                        scrollDirection: Axis.horizontal,
-                        padding: const EdgeInsets.symmetric(horizontal: 16),
-                        child: Row(
-                          children: [
-                            _buildFilterChip('Semua', 'all'),
-                            const SizedBox(width: 8),
-                            _buildFilterChip('Pemasukan', 'income'),
-                            const SizedBox(width: 8),
-                            _buildFilterChip('Pengeluaran', 'expense'),
-                            const SizedBox(width: 8),
-                            _buildFilterChip('Transfer', 'transfer'),
-                          ],
-                        ),
-                      ),
-                      const SizedBox(height: 8),
-                      Expanded(
-                        child: filteredTransactions.isEmpty
-                            ? const Center(
-                                child: Text(
-                                  'Tidak ada transaksi pada filter ini.',
-                                  style:
-                                      TextStyle(color: AppColors.textSecondary),
-                                ),
-                              )
-                            : ListView.builder(
-                                padding:
-                                    const EdgeInsets.fromLTRB(16, 4, 16, 80),
-                                itemCount: filteredTransactions.length,
-                                itemBuilder: (context, index) {
-                                  final trx = filteredTransactions[index];
-                                  final isIncome = trx.type == 'income';
-                                  final isTransfer = trx.type == 'transfer';
-
-                                  return Dismissible(
-                                    key: ValueKey(
-                                        trx.id ?? '$index-${trx.title}'),
-                                    direction: DismissDirection.endToStart,
-                                    background: Container(
-                                      margin: const EdgeInsets.only(bottom: 12),
-                                      padding: const EdgeInsets.only(right: 20),
-                                      alignment: Alignment.centerRight,
-                                      decoration: BoxDecoration(
-                                        color: AppColors.expenseRed,
-                                        borderRadius: BorderRadius.circular(18),
-                                      ),
-                                      child: const Icon(
-                                        Icons.delete_sweep,
-                                        color: AppColors.textPrimary,
-                                      ),
-                                    ),
-                                    onDismissed: (_) async {
-                                      if (trx.id != null) {
-                                        await _controller
-                                            .deleteTransaction(trx.id!);
-                                      }
-                                    },
-                                    child: TransactionCard(
-                                      title: trx.title,
-                                      date: isTransfer
-                                          ? '${trx.wallet} → ${trx.toWallet} • ${trx.date.day}/${trx.date.month}/${trx.date.year}'
-                                          : '${trx.category} • ${trx.wallet} • ${trx.date.day}/${trx.date.month}/${trx.date.year}',
-                                      amount: isTransfer
-                                          ? PrivacyService.formatCurrency(
-                                              trx.amount,
-                                              _currencyFormat,
-                                              isHidden,
-                                              prefix: '⇄ ',
-                                            )
-                                          : PrivacyService.formatCurrency(
-                                              trx.amount,
-                                              _currencyFormat,
-                                              isHidden,
-                                              prefix: isIncome ? '+ ' : '- ',
-                                            ),
-                                      isPositive: isIncome,
-                                      customColor: isTransfer
-                                          ? AppColors.neonCyan
-                                          : null,
-                                      icon: _resolveCategoryIcon(
-                                          trx.category, customCategories),
-                                      onTap: () => isTransfer
-                                          ? _showTransferModal(context,
-                                              existingTrx: trx)
-                                          : _showTransactionModal(
-                                              context,
-                                              existingTrx: trx,
-                                              customCategories:
-                                                  customCategories,
-                                            ),
-                                      onDelete: () => _controller
-                                          .deleteTransaction(trx.id!),
-                                    ),
-                                  );
-                                },
-                              ),
+                      IconButton(
+                        tooltip: 'Transfer Antar Dompet',
+                        icon: const Icon(Icons.swap_horiz, color: AppColors.neonCyan),
+                        // Menambahkan passing parameter allTransactions
+                        onPressed: () => _showTransferModal(context, allTransactions: allTransactions),
                       ),
                     ],
-                  );
-                },
-              ),
-              floatingActionButton: FloatingActionButton(
-                backgroundColor: AppColors.primaryBlue,
-                foregroundColor: AppColors.textPrimary,
-                onPressed: () => _showTransactionModal(
-                  context,
-                  customCategories: customCategories,
-                ),
-                child: const Icon(Icons.add),
-              ),
+                  ),
+                  body: Builder(
+                    builder: (context) {
+                      final prevMonth = DateTime(_selectedMonth.year, _selectedMonth.month - 1);
+
+                      final monthlyTransactions = allTransactions.where((t) {
+                        return t.date.month == _selectedMonth.month &&
+                            t.date.year == _selectedMonth.year;
+                      }).toList();
+
+                      final double prevMonthExpense = allTransactions
+                          .where((t) =>
+                              t.type == 'expense' &&
+                              t.date.month == prevMonth.month &&
+                              t.date.year == prevMonth.year)
+                          .fold<double>(0, (acc, t) => acc + t.amount);
+
+                      double totalIncome = 0;
+                      double totalExpense = 0;
+                      final Map<String, double> catMap = {};
+
+                      for (final t in monthlyTransactions) {
+                        if (t.type == 'income') {
+                          totalIncome += t.amount;
+                        } else if (t.type == 'expense') {
+                          totalExpense += t.amount;
+                          catMap[t.category] =
+                              (catMap[t.category] ?? 0) + t.amount;
+                        }
+                      }
+
+                      String topCategoryLabel = 'Terbesar: -';
+                      if (catMap.isNotEmpty && totalExpense > 0) {
+                        final topEntry = catMap.entries
+                            .reduce((a, b) => a.value > b.value ? a : b);
+                        final pct = (topEntry.value / totalExpense) * 100;
+                        topCategoryLabel =
+                            'Terbesar: ${topEntry.key} (${pct.toStringAsFixed(0)}%)';
+                      }
+
+                      final filteredTransactions = monthlyTransactions.where((t) {
+                        final matchesFilter =
+                            _selectedFilter == 'all' || t.type == _selectedFilter;
+                        final matchesWallet = _selectedWalletFilter == 'Semua' ||
+                            t.wallet == _selectedWalletFilter ||
+                            (t.type == 'transfer' &&
+                                t.toWallet == _selectedWalletFilter);
+                        final matchesSearch = t.title
+                                .toLowerCase()
+                                .contains(_searchQuery.toLowerCase()) ||
+                            t.category
+                                .toLowerCase()
+                                .contains(_searchQuery.toLowerCase());
+                        return matchesFilter && matchesWallet && matchesSearch;
+                      }).toList();
+
+                      return Column(
+                        children: [
+                          MonthSelector(
+                            selectedMonth: _selectedMonth,
+                            onMonthChanged: (newMonth) {
+                              setState(() => _selectedMonth = newMonth);
+                            },
+                          ),
+                          _buildSummaryCard(
+                            totalIncome,
+                            totalExpense,
+                            prevMonthExpense,
+                            topCategoryLabel,
+                            isHidden,
+                          ),
+                          _buildWalletRow(allTransactions, isHidden),
+                          const SizedBox(height: 10),
+                          Padding(
+                            padding: const EdgeInsets.symmetric(horizontal: 16),
+                            child: TextField(
+                              onChanged: (val) =>
+                                  setState(() => _searchQuery = val),
+                              style: const TextStyle(color: AppColors.textPrimary),
+                              decoration: InputDecoration(
+                                hintText: 'Cari transaksi atau kategori...',
+                                hintStyle:
+                                    const TextStyle(color: AppColors.textMuted),
+                                prefixIcon: const Icon(Icons.search,
+                                    color: AppColors.textMuted),
+                                filled: true,
+                                fillColor: AppColors.cardBackground,
+                                contentPadding:
+                                    const EdgeInsets.symmetric(vertical: 0),
+                                border: OutlineInputBorder(
+                                  borderRadius: BorderRadius.circular(14),
+                                  borderSide:
+                                      const BorderSide(color: AppColors.cardBorder),
+                                ),
+                                enabledBorder: OutlineInputBorder(
+                                  borderRadius: BorderRadius.circular(14),
+                                  borderSide:
+                                      const BorderSide(color: AppColors.cardBorder),
+                                ),
+                              ),
+                            ),
+                          ),
+                          const SizedBox(height: 8),
+                          SingleChildScrollView(
+                            scrollDirection: Axis.horizontal,
+                            padding: const EdgeInsets.symmetric(horizontal: 16),
+                            child: Row(
+                              children: [
+                                _buildFilterChip('Semua', 'all'),
+                                const SizedBox(width: 8),
+                                _buildFilterChip('Pemasukan', 'income'),
+                                const SizedBox(width: 8),
+                                _buildFilterChip('Pengeluaran', 'expense'),
+                                const SizedBox(width: 8),
+                                _buildFilterChip('Transfer', 'transfer'),
+                              ],
+                            ),
+                          ),
+                          const SizedBox(height: 8),
+                          Expanded(
+                            child: filteredTransactions.isEmpty
+                                ? const Center(
+                                    child: Text(
+                                      'Tidak ada transaksi pada filter ini.',
+                                      style:
+                                          TextStyle(color: AppColors.textSecondary),
+                                    ),
+                                  )
+                                : ListView.builder(
+                                    padding:
+                                        const EdgeInsets.fromLTRB(16, 4, 16, 80),
+                                    itemCount: filteredTransactions.length,
+                                    itemBuilder: (context, index) {
+                                      final trx = filteredTransactions[index];
+                                      final isIncome = trx.type == 'income';
+                                      final isTransfer = trx.type == 'transfer';
+
+                                      return Dismissible(
+                                        key: ValueKey(
+                                            trx.id ?? '$index-${trx.title}'),
+                                        direction: DismissDirection.endToStart,
+                                        background: Container(
+                                          margin: const EdgeInsets.only(bottom: 12),
+                                          padding: const EdgeInsets.only(right: 20),
+                                          alignment: Alignment.centerRight,
+                                          decoration: BoxDecoration(
+                                            color: AppColors.expenseRed,
+                                            borderRadius: BorderRadius.circular(18),
+                                          ),
+                                          child: const Icon(
+                                            Icons.delete_sweep,
+                                            color: AppColors.textPrimary,
+                                          ),
+                                        ),
+                                        onDismissed: (_) async {
+                                          if (trx.id != null) {
+                                            await _controller
+                                                .deleteTransaction(trx.id!);
+                                          }
+                                        },
+                                        child: TransactionCard(
+                                          title: trx.title,
+                                          date: isTransfer
+                                              ? '${trx.wallet} → ${trx.toWallet} • ${trx.date.day}/${trx.date.month}/${trx.date.year}'
+                                              : '${trx.category} • ${trx.wallet} • ${trx.date.day}/${trx.date.month}/${trx.date.year}',
+                                          amount: isTransfer
+                                              ? PrivacyService.formatCurrency(
+                                                  trx.amount,
+                                                  _currencyFormat,
+                                                  isHidden,
+                                                  prefix: '⇄ ',
+                                                )
+                                              : PrivacyService.formatCurrency(
+                                                  trx.amount,
+                                                  _currencyFormat,
+                                                  isHidden,
+                                                  prefix: isIncome ? '+ ' : '- ',
+                                                ),
+                                          isPositive: isIncome,
+                                          customColor: isTransfer
+                                              ? AppColors.neonCyan
+                                              : null,
+                                          icon: _resolveCategoryIcon(
+                                              trx.category, customCategories),
+                                          onTap: () => isTransfer
+                                              ? _showTransferModal(
+                                                  context,
+                                                  existingTrx: trx,
+                                                  allTransactions: allTransactions, // pass transactions
+                                                )
+                                              : _showTransactionModal(
+                                                  context,
+                                                  existingTrx: trx,
+                                                  customCategories:
+                                                      customCategories,
+                                                ),
+                                          onDelete: () => _controller
+                                              .deleteTransaction(trx.id!),
+                                        ),
+                                      );
+                                    },
+                                  ),
+                          ),
+                        ],
+                      );
+                    }
+                  ),
+                  floatingActionButton: FloatingActionButton(
+                    backgroundColor: AppColors.primaryBlue,
+                    foregroundColor: AppColors.textPrimary,
+                    onPressed: () => _showTransactionModal(
+                      context,
+                      customCategories: customCategories,
+                    ),
+                    child: const Icon(Icons.add),
+                  ),
+                );
+              },
             );
           },
         );

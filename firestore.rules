@@ -1,0 +1,48 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+
+    // Transaksi: hanya pemilik dokumen yang bisa akses, nominal wajib > 0
+    match /transactions/{transactionId} {
+      allow read, delete: if isOwner(resource.data.userId);
+      allow create: if isOwner(request.resource.data.userId) &&
+        request.resource.data.amount is number &&
+        request.resource.data.amount > 0 &&
+        request.resource.data.type in ['income', 'expense', 'transfer'];
+      allow update: if isOwner(resource.data.userId) &&
+        request.resource.data.userId == resource.data.userId &&
+        request.resource.data.amount is number &&
+        request.resource.data.amount > 0;
+    }
+
+    // Utang & Piutang: hanya pemilik dokumen yang bisa akses
+    match /debts/{debtId} {
+      allow read, delete: if isOwner(resource.data.userId);
+      allow create: if isOwner(request.resource.data.userId) &&
+        request.resource.data.amount is number &&
+        request.resource.data.amount > 0;
+      allow update: if isOwner(resource.data.userId) &&
+        request.resource.data.userId == resource.data.userId;
+    }
+
+    // Kategori kustom & koleksi keuangan lainnya per userId
+    match /{collectionName}/{docId} {
+      allow read, delete: if collectionName in ['categories', 'budgets', 'savings', 'bills'] &&
+        isOwner(resource.data.userId);
+      allow create: if collectionName in ['categories', 'budgets', 'savings', 'bills'] &&
+        isOwner(request.resource.data.userId);
+      allow update: if collectionName in ['categories', 'budgets', 'savings', 'bills'] &&
+        isOwner(resource.data.userId) &&
+        request.resource.data.userId == resource.data.userId;
+    }
+  }
+}
