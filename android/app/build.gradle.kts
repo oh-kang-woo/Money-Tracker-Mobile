@@ -8,7 +8,7 @@ plugins {
 }
 
 android {
-    namespace = "com.example.money_tracker_mobile"
+    namespace = "com.example.utsproject"
     compileSdk = 37
     ndkVersion = flutter.ndkVersion
 
